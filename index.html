@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Community Comments Scraper</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1><i class="fab fa-youtube"></i> YouTube Community Comments Scraper</h1>
+            <p class="subtitle">Extract the top 50 most liked comments from any YouTube Community Post</p>
+        </header>
+
+        <main class="main-content">
+            <div class="input-section">
+                <div class="input-group">
+                    <label for="url-input"><i class="fas fa-link"></i> YouTube Community Post URL:</label>
+                    <input type="text" id="url-input" placeholder="https://www.youtube.com/post/... or https://www.youtube.com/channel/.../community?lb=...">
+                    <button id="scrape-btn" class="btn btn-primary">
+                        <i class="fas fa-search"></i> Get Top Comments
+                    </button>
+                </div>
+                
+                <div class="examples">
+                    <p><strong>Examples of valid URLs:</strong></p>
+                    <ul>
+                        <li>https://www.youtube.com/post/UC... (Post URL)</li>
+                        <li>https://www.youtube.com/channel/UC.../community?lb=... (Community tab URL)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="results-section">
+                <div class="results-header">
+                    <h2><i class="fas fa-trophy"></i> Top 50 Most Liked Comments</h2>
+                    <div class="controls">
+                        <button id="copy-all-btn" class="btn btn-secondary" disabled>
+                            <i class="fas fa-copy"></i> Copy All Comments
+                        </button>
+                        <button id="export-json-btn" class="btn btn-secondary" disabled>
+                            <i class="fas fa-file-export"></i> Export as JSON
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="stats">
+                    <div class="stat-card">
+                        <i class="fas fa-comments"></i>
+                        <span id="total-comments">0</span>
+                        <p>Comments Found</p>
+                    </div>
+                    <div class="stat-card">
+                        <i class="fas fa-heart"></i>
+                        <span id="total-likes">0</span>
+                        <p>Total Likes</p>
+                    </div>
+                    <div class="stat-card">
+                        <i class="fas fa-user"></i>
+                        <span id="unique-authors">0</span>
+                        <p>Unique Authors</p>
+                    </div>
+                </div>
+                
+                <div id="loading" class="loading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>Scraping comments from YouTube... This may take a moment.</p>
+                </div>
+                
+                <div id="error-message" class="error-message" style="display: none;"></div>
+                
+                <div id="comments-container" class="comments-container">
+                    <!-- Comments will be inserted here -->
+                    <div class="placeholder">
+                        <i class="fas fa-comment-alt"></i>
+                        <h3>No Comments Yet</h3>
+                        <p>Enter a YouTube Community Post URL above to see the top 50 most liked comments.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="copy-section" style="display: none;">
+                <h3><i class="fas fa-clipboard-check"></i> Formatted Comments (Ready to Copy)</h3>
+                <div class="copy-area">
+                    <textarea id="formatted-comments" readonly></textarea>
+                    <button id="copy-text-btn" class="btn btn-primary">
+                        <i class="fas fa-copy"></i> Copy to Clipboard
+                    </button>
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <p>© 2024 YouTube Community Comments Scraper | Made with <i class="fas fa-heart"></i> for Content Creators</p>
+            <p class="disclaimer">
+                <i class="fas fa-exclamation-triangle"></i> This tool is for educational purposes. Please respect YouTube's Terms of Service.
+            </p>
+        </footer>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            let currentComments = [];
+            
+            // Scrape comments
+            $('#scrape-btn').click(function() {
+                const url = $('#url-input').val().trim();
+                
+                if (!url) {
+                    showError('Please enter a YouTube Community Post URL');
+                    return;
+                }
+                
+                if (!url.includes('youtube.com')) {
+                    showError('Please enter a valid YouTube URL');
+                    return;
+                }
+                
+                // Show loading
+                $('#loading').show();
+                $('#error-message').hide();
+                $('#comments-container .placeholder').hide();
+                $('.copy-section').hide();
+                
+                // Send request to backend
+                $.ajax({
+                    url: '/scrape',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ url: url }),
+                    success: function(response) {
+                        $('#loading').hide();
+                        
+                        if (response.success) {
+                            currentComments = response.comments;
+                            displayComments(currentComments);
+                            updateStats(currentComments);
+                            enableExportButtons();
+                        } else {
+                            showError(response.error || 'Failed to scrape comments');
+                        }
+                    },
+                    error: function(xhr) {
+                        $('#loading').hide();
+                        showError(xhr.responseJSON?.error || 'Server error. Please try again.');
+                    }
+                });
+            });
+            
+            // Display comments
+            function displayComments(comments) {
+                const container = $('#comments-container');
+                container.empty();
+                
+                if (comments.length === 0) {
+                    container.html(`
+                        <div class="placeholder">
+                            <i class="fas fa-comment-slash"></i>
+                            <h3>No Comments Found</h3>
+                            <p>No comments were found for this community post.</p>
+                        </div>
+                    `);
+                    return;
+                }
+                
+                comments.forEach((comment, index) => {
+                    const commentHtml = `
+                        <div class="comment-card">
+                            <div class="comment-header">
+                                <div class="comment-rank">#${index + 1}</div>
+                                <div class="comment-author">
+                                    <i class="fas fa-user-circle"></i>
+                                    <span class="author-name">${escapeHtml(comment.author)}</span>
+                                </div>
+                                <div class="comment-likes">
+                                    <i class="fas fa-heart"></i>
+                                    <span class="like-count">${comment.likes.toLocaleString()} likes</span>
+                                </div>
+                            </div>
+                            <div class="comment-body">
+                                <p class="comment-text">${escapeHtml(comment.text)}</p>
+                            </div>
+                            <div class="comment-footer">
+                                <span class="comment-time">
+                                    <i class="far fa-clock"></i> ${escapeHtml(comment.timestamp || 'N/A')}
+                                </span>
+                                ${comment.comment_url ? `
+                                <a href="${comment.comment_url}" target="_blank" class="comment-link">
+                                    <i class="fas fa-external-link-alt"></i> View Comment
+                                </a>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                    container.append(commentHtml);
+                });
+            }
+            
+            // Update statistics
+            function updateStats(comments) {
+                $('#total-comments').text(comments.length);
+                
+                const totalLikes = comments.reduce((sum, comment) => sum + comment.likes, 0);
+                $('#total-likes').text(totalLikes.toLocaleString());
+                
+                const uniqueAuthors = [...new Set(comments.map(c => c.author))].length;
+                $('#unique-authors').text(uniqueAuthors);
+            }
+            
+            // Enable export buttons
+            function enableExportButtons() {
+                $('#copy-all-btn, #export-json-btn').prop('disabled', false);
+            }
+            
+            // Copy all comments
+            $('#copy-all-btn').click(function() {
+                if (currentComments.length === 0) return;
+                
+                // Get formatted text from server
+                $.ajax({
+                    url: '/export',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ comments: currentComments }),
+                    success: function(response) {
+                        if (response.success) {
+                            $('#formatted-comments').val(response.formatted_text);
+                            $('.copy-section').show();
+                            // Scroll to copy section
+                            $('html, body').animate({
+                                scrollTop: $('.copy-section').offset().top
+                            }, 500);
+                        }
+                    },
+                    error: function() {
+                        showError('Failed to format comments for copying');
+                    }
+                });
+            });
+            
+            // Copy text to clipboard
+            $('#copy-text-btn').click(function() {
+                const textarea = $('#formatted-comments')[0];
+                textarea.select();
+                textarea.setSelectionRange(0, 99999); // For mobile devices
+                
+                try {
+                    const successful = document.execCommand('copy');
+                    if (successful) {
+                        alert('Comments copied to clipboard!');
+                    } else {
+                        alert('Failed to copy. Please try again.');
+                    }
+                } catch (err) {
+                    alert('Error copying to clipboard: ' + err);
+                }
+            });
+            
+            // Export as JSON
+            $('#export-json-btn').click(function() {
+                if (currentComments.length === 0) return;
+                
+                const dataStr = JSON.stringify(currentComments, null, 2);
+                const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+                
+                const exportFileDefaultName = `youtube-comments-${Date.now()}.json`;
+                
+                const linkElement = document.createElement('a');
+                linkElement.setAttribute('href', dataUri);
+                linkElement.setAttribute('download', exportFileDefaultName);
+                linkElement.click();
+            });
+            
+            // Show error message
+            function showError(message) {
+                $('#error-message').html(`
+                    <i class="fas fa-exclamation-circle"></i>
+                    <span>${escapeHtml(message)}</span>
+                `).show();
+            }
+            
+            // Escape HTML to prevent XSS
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+            
+            // Allow Enter key to trigger scrape
+            $('#url-input').keypress(function(e) {
+                if (e.which === 13) {
+                    $('#scrape-btn').click();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
